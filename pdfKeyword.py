@@ -33,6 +33,43 @@ okt = Okt()
 pdf_files = sorted(glob.glob(os.path.join(FOLDER, "*.pdf")))
 print(f"총 {len(pdf_files)}개 PDF 발견\n")
 
+# ── 복합명사 포함 명사 추출 함수 ────────────────────────────
+def extract_nouns_with_compounds(text, min_len=2, stopwords=set()):
+    """
+    단일 명사 + 연속 명사 결합(복합명사)을 함께 추출합니다.
+    예) ['자연어', '처리'] → '자연어처리'도 후보에 추가
+    """
+    pos_tags = okt.pos(text, norm=True, stem=True)
+    
+    result   = []
+    compound = []   # 연속 명사 버퍼
+
+    def flush(buf):
+        """버퍼에 쌓인 연속 명사를 단일/복합 형태로 모두 결과에 추가"""
+        for word in buf:                          # 단일 명사
+            if len(word) >= min_len and word not in stopwords:
+                result.append(word)
+        # 연속 명사가 2개 이상이면 복합명사 생성 (2-gram, 3-gram …)
+        for size in range(2, len(buf) + 1):
+            for start in range(len(buf) - size + 1):
+                combined = "".join(buf[start : start + size])
+                if len(combined) >= min_len and combined not in stopwords:
+                    result.append(combined)
+
+    for word, tag in pos_tags:
+        if tag == "Noun":
+            compound.append(word)
+        else:
+            if compound:
+                flush(compound)
+                compound = []
+
+    if compound:              # 문장 끝에 명사가 남아 있을 경우 처리
+        flush(compound)
+
+    return result
+# ─────────────────────────────────────────────────────────────
+
 # ── 1. 각 파일에서 명사 추출 ─────────────────────────────
 doc_nouns = {}   # 파일명 → 명사 리스트
 doc_texts = []   # TF-IDF용 텍스트 리스트
@@ -52,10 +89,7 @@ for i, pdf_path in enumerate(pdf_files, 1):
         continue
 
     # 명사 추출 + 불용어 제거
-    nouns = [
-        w for w in okt.nouns(text)
-        if len(w) >= MIN_LEN and w not in STOPWORDS
-    ]
+    nouns = extract_nouns_with_compounds(text, min_len=MIN_LEN, stopwords=STOPWORDS)
 
     doc_nouns[fname] = nouns
     doc_texts.append(" ".join(nouns))  # TF-IDF용
